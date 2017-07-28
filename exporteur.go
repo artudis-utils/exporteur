@@ -1,7 +1,20 @@
 package main
 
-import "fmt"
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+)
 
 func main() {
-	fmt.Printf("hi!")
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Username: ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("Unexpected error reading from standard input.")
+		fmt.Println(err)
+	}
+	username := strings.TrimSpace(input)
+	fmt.Println(username)
 }
