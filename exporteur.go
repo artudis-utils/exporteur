@@ -5,14 +5,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"strings"
 	"time"
-	"mime"
-	"io"
 
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/publicsuffix"
@@ -72,8 +72,6 @@ func login(client *http.Client) {
 
 }
 
-
-
 func exportData(irtype string, client *http.Client) {
 
 	path := fmt.Sprintf("/%v/export", irtype)
@@ -125,21 +123,18 @@ func exportData(irtype string, client *http.Client) {
 
 	fmt.Printf("Saving to filename %v\n", filename)
 
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-	//open a file for writing
-    file, err := os.Create(filename)
-    if err != nil {
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
-    }
-    // Use io.Copy to just dump the response body to the file. This supports huge files
-    _, err = io.Copy(file, resp.Body)
-    if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-    }
-    file.Close()
-    fmt.Println("Success!")
+	}
+	file.Close()
 
 }
 
