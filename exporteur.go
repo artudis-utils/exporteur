@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -31,18 +34,14 @@ func prompt() (username, password string) {
 	reader := bufio.NewReader(os.Stdin)
 	usernameinput, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Unexpected error reading username.")
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Error reading username.", err)
 	}
 
 	// Get the password
 	fmt.Print("Password: ")
 	passwordinput, err := terminal.ReadPassword(0)
 	if err != nil {
-		fmt.Println("Unexpected error reading password.")
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Error reading password.", err)
 	}
 	fmt.Println()
 
@@ -50,29 +49,27 @@ func prompt() (username, password string) {
 }
 
 func login(client *http.Client) {
-
 	for {
 		username, password := prompt()
 
 		resp, err := client.PostForm("https://ir.library.carleton.ca/login",
 			url.Values{"userid": {username}, "password": {password}})
 		if err != nil {
-			fmt.Println("Unexpected error logging in.")
-			fmt.Println(err)
-			os.Exit(1)
+			log.Fatalln("Error logging in.", err)
 		}
 		resp.Body.Close()
 
 		if resp.Request.URL.Path == "/" {
 			break
 		} else {
-			fmt.Println("Error logging in, retry...")
+			fmt.Println("Username or password incorrect, please retry.")
 		}
 	}
 
 }
 
-func exportData(irtype string, client *http.Client) {
+func exportData(irtype string, client *http.Client, waitgroup *sync.WaitGroup) {
+	defer waitgroup.Done()
 
 	path := fmt.Sprintf("/%v/export", irtype)
 	var curExport = &export{}
@@ -83,78 +80,92 @@ func exportData(irtype string, client *http.Client) {
 
 		resp, err := client.Get(url)
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			log.Fatalln("Error GETing at URL ", url, err)
 		}
 
 		if resp.StatusCode != 200 || resp.Request.URL.Path != path {
 			buf := new(bytes.Buffer)
 			buf.ReadFrom(resp.Body)
-			fmt.Println(buf.String())
 			resp.Body.Close()
-			os.Exit(1)
+			log.Fatalln(buf.String())
 		}
 
 		err = json.NewDecoder(resp.Body).Decode(curExport)
 		resp.Body.Close()
-
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			log.Fatalln("Unable to parse JSON response.", err)
 		}
 
-		fmt.Printf("%+v\n", curExport)
+		log.Printf("%+v\n", curExport)
 		time.Sleep(1 * time.Second)
 	}
 
 	resp, err := client.Get(curExport.URL)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Error GETing at URL ", curExport.URL, err)
 	}
 
-	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+	mediaTypeFromHeader := resp.Header.Get("Content-Disposition")
+	_, params, err := mime.ParseMediaType(mediaTypeFromHeader)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Error parsing media type.", mediaTypeFromHeader, err)
 	}
 
 	filename := fmt.Sprintf("%v-%v", time.Now().Format("2006-01-02"), params["filename"])
 
-	fmt.Printf("Saving to filename %v\n", filename)
+	log.Println("Deleting old file if it exists ", filename)
+
+	err = os.Remove(filename)
+	if err != nil {
+		log.Println("Could not delete existing file ", filename, err)
+	}
+
+	log.Println("Saving to filename ", filename)
 
 	file, err := os.Create(filename)
+	defer file.Close()
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Could not create file ", filename)
+	}
+
+	err = file.Chmod(0600)
+	if err != nil {
+		log.Fatalln("Could not change permissions on file ", filename)
 	}
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Could not copy contents into file ", filename)
 	}
-	file.Close()
 
+	err = file.Chmod(0400)
+	if err != nil {
+		log.Fatalln("Could not change permissions on file ", filename)
+	}
 }
 
 func main() {
+	flag.Parse()
+
+	if len(flag.Args()) == 0 {
+		log.Fatalln("Please provide at least one short code for a type to export, like col or pub.")
+	}
 
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
-		fmt.Println("Unexpected error creating cookie storage.")
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalln("Could not create cookie storage.", err)
 	}
-
 	client := &http.Client{
 		Jar: jar,
 	}
 
 	login(client)
+	log.Println("Login Complete!")
 
-	fmt.Println("Login complete!")
-
-	exportData("col", client)
-
+	var waitgroup sync.WaitGroup
+	for _, shortcode := range flag.Args() {
+		waitgroup.Add(1)
+		go exportData(shortcode, client, &waitgroup)
+	}
+	waitgroup.Wait()
 }
