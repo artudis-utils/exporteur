@@ -125,22 +125,22 @@ func exportData(irtype string, client *http.Client, waitgroup *sync.WaitGroup) {
 	file, err := os.Create(filename)
 	defer file.Close()
 	if err != nil {
-		log.Fatalln("Could not create file ", filename)
+		log.Fatalln("Could not create file ", filename, err)
 	}
 
 	err = file.Chmod(0600)
 	if err != nil {
-		log.Fatalln("Could not change permissions on file ", filename)
+		log.Println("Could not change permissions on file ", filename, err)
 	}
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		log.Fatalln("Could not copy contents into file ", filename)
+		log.Fatalln("Could not copy contents into file ", filename, err)
 	}
 
 	err = file.Chmod(0400)
 	if err != nil {
-		log.Fatalln("Could not change permissions on file ", filename)
+		log.Println("Could not change permissions on file ", filename, err)
 	}
 }
 
