@@ -39,9 +39,9 @@ func uberHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(returnMe)
-
 	default:
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "inline; filename=\"test.json\"")
 		fmt.Fprint(w, `{"Hello":"World"}`)
 	}
 }
