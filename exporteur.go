@@ -39,7 +39,7 @@ func prompt() (username, password string) {
 
 	// Get the password
 	fmt.Print("Password: ")
-	passwordinput, err := terminal.ReadPassword(0)
+	passwordinput, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		log.Fatalln("Error reading password.", err)
 	}
